@@ -25,21 +25,32 @@ const COLORS = [
 ];
 
 export function AuditCharts({ results }: AuditChartsProps) {
+  if (!results) return null;
+
   // Overcharge by vendor
   const vendorMap = new Map<string, number>();
-  results.forEach((r) => {
-    const existing = vendorMap.get(r.invoice.vendorName) ?? 0;
-    vendorMap.set(r.invoice.vendorName, existing + r.overchargeDetected);
+  (results || []).forEach((r) => {
+    const vendorName =
+      typeof r?.invoice?.vendorName === "string" ? r.invoice.vendorName : "Unknown";
+
+    const existing = vendorMap.get(vendorName) ?? 0;
+
+    vendorMap.set(vendorName, existing + (Number(r?.overchargeDetected) || 0));
   });
-  const vendorData = Array.from(vendorMap.entries()).map(([name, amount]) => ({
-    name: name.split(" ")[0],
-    amount: Math.round(amount),
-  }));
+  const vendorData = Array.from(vendorMap.entries()).map(([name, amount]) => {
+    const safeName =
+      typeof name === "string" && name.length > 0 ? name.split(" ")[0] : "Unknown";
+    const safeAmount = Number.isFinite(amount) ? Math.round(amount) : 0;
+    return {
+      name: safeName,
+      amount: safeAmount,
+    };
+  });
 
   // Overcharge by error type
   const typeMap = new Map<string, number>();
-  results.forEach((r) => {
-    r.discrepancies.forEach((d) => {
+  (results || []).forEach((r) => {
+    (r?.discrepancies || []).forEach((d) => {
       const existing = typeMap.get(d.issueType) ?? 0;
       typeMap.set(d.issueType, existing + d.difference);
     });
@@ -49,28 +60,54 @@ export function AuditCharts({ results }: AuditChartsProps) {
     value: Math.round(value),
   }));
 
-  // Risk scores
+  // Risk scores with visual scoring
+  const riskFillMap = {
+    Low: 25,
+    Medium: 60,
+    High: 90
+  };
+  
   const riskData = [
-    { name: "Low", value: results.filter((r) => r.riskScore === "Low").length },
-    { name: "Medium", value: results.filter((r) => r.riskScore === "Medium").length },
-    { name: "High", value: results.filter((r) => r.riskScore === "High").length },
-  ].filter((d) => d.value > 0);
+    {
+      name: "Low",
+      value: (results || []).filter((r) => r && r.riskScore === "Low").length,
+      fill: riskFillMap.Low,
+    },
+    {
+      name: "Medium",
+      value: (results || []).filter((r) => r && r.riskScore === "Medium").length,
+      fill: riskFillMap.Medium,
+    },
+    {
+      name: "High",
+      value: (results || []).filter((r) => r && r.riskScore === "High").length,
+      fill: riskFillMap.High,
+    },
+  ].filter((d) => (d?.value || 0) > 0);
 
-  if (results.length === 0) return null;
+  if (!results || results.length === 0) return null;
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {/* Overcharge by Vendor */}
       <div className="rounded-lg border bg-card p-4">
         <h4 className="section-title mb-3">Overcharges by Vendor</h4>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={vendorData}>
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v: number) => `₹${v.toLocaleString("en-IN")}`} />
-            <Bar dataKey="amount" fill="hsl(210, 90%, 50%)" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {!vendorData?.length || vendorData.every(v => v.amount === 0) ? (
+          <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+            No overcharges detected
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={vendorData}>
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(v: number) => `₹${Number(v || 0).toLocaleString("en-IN")}`}
+              />
+              <Bar dataKey="amount" fill="hsl(210, 90%, 50%)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Overcharge by Type */}
@@ -83,7 +120,9 @@ export function AuditCharts({ results }: AuditChartsProps) {
                 <Cell key={i} fill={COLORS[i % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(v: number) => `₹${v.toLocaleString("en-IN")}`} />
+            <Tooltip
+              formatter={(v: number) => `₹${Number(v || 0).toLocaleString("en-IN")}`}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

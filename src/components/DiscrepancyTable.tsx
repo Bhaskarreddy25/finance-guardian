@@ -23,7 +23,7 @@ const typeColor: Record<string, string> = {
 };
 
 export function DiscrepancyTable({ discrepancies }: DiscrepancyTableProps) {
-  if (discrepancies.length === 0) {
+  if (discrepancies?.length === 0) {
     return (
       <div className="flex items-center gap-2 rounded-lg border bg-success/5 px-5 py-4 text-sm text-success">
         <span className="font-medium">✓ No discrepancies detected</span>

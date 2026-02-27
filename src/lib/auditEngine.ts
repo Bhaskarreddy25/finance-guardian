@@ -8,26 +8,31 @@ export function auditInvoice(invoice: ExtractedInvoice): AuditResult {
   const contract = contractRateCards[invoice.vendorName];
   let correctSubtotal = 0;
 
+  // Defensive numeric handling
+  const safeInvoiceNumber = invoice?.invoiceNumber || "";
+  const safeVendorName = invoice?.vendorName || "Unknown Vendor";
+  const safeTotalAmount = Number(invoice?.totalAmount) || 0;
+
   // Duplicate check
-  const isDuplicate = processedInvoiceNumbers.has(invoice.invoiceNumber);
+  const isDuplicate = processedInvoiceNumbers.has(safeInvoiceNumber);
   if (isDuplicate) {
     discrepancies.push({
       issueType: "Duplicate Invoice",
-      description: `Invoice ${invoice.invoiceNumber} has already been processed`,
+      description: `Invoice ${safeInvoiceNumber} has already been processed`,
       expectedValue: "Unique",
       actualValue: "Duplicate",
-      difference: invoice.totalAmount,
-      explanation: `Invoice #${invoice.invoiceNumber} from ${invoice.vendorName} was submitted previously. This may indicate a duplicate billing attempt worth ₹${invoice.totalAmount.toLocaleString("en-IN")}.`,
+      difference: safeTotalAmount,
+      explanation: `Invoice #${safeInvoiceNumber} from ${safeVendorName} was submitted previously. This may indicate a duplicate billing attempt worth ₹${safeTotalAmount.toLocaleString("en-IN")}.`,
     });
   }
-  processedInvoiceNumbers.add(invoice.invoiceNumber);
+  processedInvoiceNumbers.add(safeInvoiceNumber);
 
   if (!contract) {
     // No contract found — can't audit rates
     return {
       invoice,
       discrepancies,
-      correctAmount: invoice.totalAmount,
+      correctAmount: safeTotalAmount,
       overchargeDetected: 0,
       riskScore: "Low",
       isDuplicate,
@@ -35,72 +40,80 @@ export function auditInvoice(invoice: ExtractedInvoice): AuditResult {
   }
 
   // Rate checks
-  for (const item of invoice.lineItems) {
+  for (const item of invoice?.lineItems || []) {
     const approvedRate = contract.approvedRates[item.description];
-    if (approvedRate !== undefined && item.unitRate > approvedRate) {
-      const diff = (item.unitRate - approvedRate) * item.quantity;
+    const safeUnitRate = Number(item?.unitRate) || 0;
+    const safeQuantity = Number(item?.quantity) || 0;
+    
+    if (approvedRate !== undefined && safeUnitRate > approvedRate) {
+      const diff = (safeUnitRate - approvedRate) * safeQuantity;
       discrepancies.push({
         issueType: "Rate Mismatch",
         description: `${item.description} rate exceeds contract`,
         expectedValue: `₹${approvedRate}/unit`,
-        actualValue: `₹${item.unitRate}/unit`,
+        actualValue: `₹${safeUnitRate}/unit`,
         difference: diff,
-        explanation: `${item.description} billed at ₹${item.unitRate} per unit but contract rate is ₹${approvedRate}. Overcharge of ₹${diff.toLocaleString("en-IN")} on ${item.quantity} units.`,
+        explanation: `${item.description} billed at ₹${safeUnitRate} per unit but contract rate is ₹${approvedRate}. Overcharge of ₹${diff.toLocaleString("en-IN")} on ${safeQuantity} units.`,
       });
     }
-    const effectiveRate = approvedRate ?? item.unitRate;
-    correctSubtotal += effectiveRate * item.quantity;
+    const effectiveRate = approvedRate ?? safeUnitRate;
+    correctSubtotal += effectiveRate * safeQuantity;
 
     // GST check
-    if (item.gstRate !== contract.approvedGstRate) {
-      const correctGst = (effectiveRate * item.quantity * contract.approvedGstRate) / 100;
-      const actualGst = (item.unitRate * item.quantity * item.gstRate) / 100;
+    const safeGstRate = Number(item?.gstRate) || 0;
+    if (safeGstRate !== contract.approvedGstRate) {
+      const correctGst = (effectiveRate * safeQuantity * contract.approvedGstRate) / 100;
+      const actualGst = (safeUnitRate * safeQuantity * safeGstRate) / 100;
       discrepancies.push({
         issueType: "GST Error",
         description: `Incorrect GST on ${item.description}`,
         expectedValue: `${contract.approvedGstRate}%`,
-        actualValue: `${item.gstRate}%`,
+        actualValue: `${safeGstRate}%`,
         difference: Math.abs(actualGst - correctGst),
-        explanation: `GST applied at ${item.gstRate}% on ${item.description} but contract specifies ${contract.approvedGstRate}%. Difference: ₹${Math.abs(actualGst - correctGst).toLocaleString("en-IN")}.`,
+        explanation: `GST applied at ${safeGstRate}% on ${item.description} but contract specifies ${contract.approvedGstRate}%. Difference: ₹${Math.abs(actualGst - correctGst).toLocaleString("en-IN")}.`,
       });
     }
 
     // Calculation check
-    const expectedTotal = item.unitRate * item.quantity;
-    if (Math.abs(item.lineTotal - expectedTotal) > 1) {
+    const safeLineTotal = Number(item?.lineTotal) || 0;
+    const expectedTotal = safeUnitRate * safeQuantity;
+    if (Math.abs(safeLineTotal - expectedTotal) > 1) {
       discrepancies.push({
         issueType: "Calculation Error",
         description: `Line total mismatch on ${item.description}`,
         expectedValue: `₹${expectedTotal.toLocaleString("en-IN")}`,
-        actualValue: `₹${item.lineTotal.toLocaleString("en-IN")}`,
-        difference: Math.abs(item.lineTotal - expectedTotal),
-        explanation: `${item.description}: ${item.quantity} × ₹${item.unitRate} should equal ₹${expectedTotal.toLocaleString("en-IN")} but invoice shows ₹${item.lineTotal.toLocaleString("en-IN")}.`,
+        actualValue: `₹${safeLineTotal.toLocaleString("en-IN")}`,
+        difference: Math.abs(safeLineTotal - expectedTotal),
+        explanation: `${item.description}: ${safeQuantity} × ₹${safeUnitRate} should equal ₹${expectedTotal.toLocaleString("en-IN")} but invoice shows ₹${safeLineTotal.toLocaleString("en-IN")}.`,
       });
     }
   }
 
   // Surcharge checks
-  for (const surcharge of invoice.surcharges) {
+  for (const surcharge of invoice?.surcharges || []) {
     const allowed = contract.allowedSurchargeTypes ?? [];
+    const safeSurchargeAmount = Number(surcharge?.amount) || 0;
+    
     if (!allowed.includes(surcharge.description)) {
       discrepancies.push({
         issueType: "Surcharge Violation",
         description: `Unauthorized surcharge: ${surcharge.description}`,
         expectedValue: "₹0",
-        actualValue: `₹${surcharge.amount.toLocaleString("en-IN")}`,
-        difference: surcharge.amount,
-        explanation: `"${surcharge.description}" is not an approved surcharge type under the contract with ${invoice.vendorName}. Unauthorized charge of ₹${surcharge.amount.toLocaleString("en-IN")}.`,
+        actualValue: `₹${safeSurchargeAmount.toLocaleString("en-IN")}`,
+        difference: safeSurchargeAmount,
+        explanation: `"${surcharge.description}" is not an approved surcharge type under the contract with ${safeVendorName}. Unauthorized charge of ₹${safeSurchargeAmount.toLocaleString("en-IN")}.`,
       });
     } else if (surcharge.description === "Fuel Surcharge" && surcharge.percentage) {
-      if (surcharge.percentage > contract.approvedFuelSurchargePercent) {
+      const safePercentage = Number(surcharge.percentage) || 0;
+      if (safePercentage > contract.approvedFuelSurchargePercent) {
         const correctAmount = (correctSubtotal * contract.approvedFuelSurchargePercent) / 100;
         discrepancies.push({
           issueType: "Surcharge Violation",
           description: `Fuel surcharge exceeds contract rate`,
           expectedValue: `${contract.approvedFuelSurchargePercent}% (₹${correctAmount.toLocaleString("en-IN")})`,
-          actualValue: `${surcharge.percentage}% (₹${surcharge.amount.toLocaleString("en-IN")})`,
-          difference: surcharge.amount - correctAmount,
-          explanation: `Fuel surcharge applied at ${surcharge.percentage}% but contract allows only ${contract.approvedFuelSurchargePercent}%. Overcharge detected: ₹${(surcharge.amount - correctAmount).toLocaleString("en-IN")}.`,
+          actualValue: `${safePercentage}% (₹${safeSurchargeAmount.toLocaleString("en-IN")})`,
+          difference: safeSurchargeAmount - correctAmount,
+          explanation: `Fuel surcharge applied at ${safePercentage}% but contract allows only ${contract.approvedFuelSurchargePercent}%. Overcharge detected: ₹${(safeSurchargeAmount - correctAmount).toLocaleString("en-IN")}.`,
         });
       }
     }
@@ -110,7 +123,7 @@ export function auditInvoice(invoice: ExtractedInvoice): AuditResult {
   const correctGstAmount = (correctSubtotal * contract.approvedGstRate) / 100;
   const correctFuelSurcharge = (correctSubtotal * contract.approvedFuelSurchargePercent) / 100;
   const correctAmount = correctSubtotal + correctGstAmount + correctFuelSurcharge;
-  const overchargeDetected = Math.max(0, invoice.totalAmount - correctAmount);
+  const overchargeDetected = Math.max(0, safeTotalAmount - correctAmount);
 
   const riskScore: AuditResult["riskScore"] =
     discrepancies.length >= 4 || overchargeDetected > 5000

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Upload, FileText, Loader2 } from "lucide-react";
+import { realExtraction } from "@/lib/mockExtraction";
 
 interface InvoiceUploadZoneProps {
   onFileSelected: (file: File) => void;
@@ -14,7 +15,12 @@ export function InvoiceUploadZone({ onFileSelected, isProcessing }: InvoiceUploa
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file) onFileSelected(file);
+      if (file) {
+        onFileSelected(file);
+        void (async () => {
+          await realExtraction(file);
+        })();
+      }
     },
     [onFileSelected]
   );
@@ -29,7 +35,12 @@ export function InvoiceUploadZone({ onFileSelected, isProcessing }: InvoiceUploa
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) onFileSelected(file);
+      if (file) {
+        onFileSelected(file);
+        void (async () => {
+          await realExtraction(file);
+        })();
+      }
     },
     [onFileSelected]
   );

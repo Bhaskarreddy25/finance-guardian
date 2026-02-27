@@ -14,8 +14,15 @@ export interface ExtractedInvoice {
   lineItems: LineItem[];
   subtotal: number;
   totalAmount: number;
+  correctAmount: number;
+  overcharge: number;
+  potentialRecovery: number;
+  recoveryRate: number;
+  status: string;
   surcharges: { description: string; amount: number; percentage?: number }[];
   confidence: "High" | "Medium" | "Low";
+  confidenceScore?: number; // New confidence score
+  confidenceLevel?: string; // New confidence level
 }
 
 export interface ContractRateCard {
@@ -48,6 +55,13 @@ export interface AuditResult {
   overchargeDetected: number;
   riskScore: "Low" | "Medium" | "High";
   isDuplicate: boolean;
+  riskScoreNumber?: number; // New numeric risk score
+  riskBreakdown?: {
+    duplicateCount: number;
+    overchargePercent: number;
+    gstMismatchCount: number;
+    lineItemErrorCount: number;
+  };
 }
 
 export interface DashboardMetrics {
@@ -57,4 +71,18 @@ export interface DashboardMetrics {
   potentialRecovery: number;
   highRiskVendors: number;
   duplicateInvoices: number;
+  savedThisMonth?: number; // New metric
+  topRiskVendor?: string; // New metric
+  savingsPercentage?: number; // New metric
+}
+
+export interface Analytics {
+  overchargesByVendor: Record<string, number>;
+  errorTypeCounts: Record<string, number>;
+  riskDistribution: Record<string, number>;
+  trends?: {
+    topRiskVendors: { vendor: string; overcharge: number }[];
+    overchargePercentByVendor: Record<string, number>;
+    monthlyTotals: Record<string, { invoices: number; totalAmount: number; overcharge: number }>;
+  };
 }
